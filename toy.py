@@ -9,12 +9,14 @@ from tqdm import tqdm
 
 # from: https://pytorch.org/tutorials/intermediate/ddp_tutorial.html#initialize-ddp-with-torch-distributed-run-torchrun
 
+
 class ToyModel(nn.Module):
     def __init__(self):
         super(ToyModel, self).__init__()
-        self.net1 = nn.Linear(10, 100000000)
+        linear_size = 10000000
+        self.net1 = nn.Linear(10, linear_size)
         self.relu = nn.ReLU()
-        self.net2 = nn.Linear(100000000, 5)
+        self.net2 = nn.Linear(linear_size, 5)
 
     def forward(self, x):
         return self.net2(self.relu(self.net1(x)))
@@ -28,33 +30,34 @@ def demo_basic():
     # create model and move it to GPU with id rank
     device_id = rank % torch.cuda.device_count()
     model = ToyModel().to(device_id)
-    print(f"\n--> model has {sum(p.numel() for p in model.parameters() if p.requires_grad)/1e6} Million params\n")
+    print(
+        f"\n--> model has {sum(p.numel() for p in model.parameters() if p.requires_grad)/1e6} Million params\n"
+    )
     ddp_model = DDP(model, device_ids=[device_id])
 
     loss_fn = nn.MSELoss()
     optimizer = optim.SGD(ddp_model.parameters(), lr=0.001)
 
-    profiler = torch.profiler.profile(
+    """profiler = torch.profiler.profile(
         activities=[
             torch.profiler.ProfilerActivity.CPU,
             torch.profiler.ProfilerActivity.CUDA,
         ],
         schedule=torch.profiler.schedule(wait=100, warmup=100, active=3, repeat=1),
-        on_trace_ready=torch.profiler.tensorboard_trace_handler(
-            "profile_traces"
-        ),
+        on_trace_ready=torch.profiler.tensorboard_trace_handler("profile_traces"),
         profile_memory=True,
         with_stack=False,
         record_shapes=True,
     )
+    """
 
-    for _ in tqdm(range(1000000000)):
+    for _ in tqdm(range(10000)):
         optimizer.zero_grad()
-        outputs = ddp_model(torch.randn(20, 10))
+        outputs = ddp_model(torch.randn(20, 10).to(device_id))
         labels = torch.randn(20, 5).to(device_id)
         loss_fn(outputs, labels).backward()
         optimizer.step()
-        profiler.step()
+        # profiler.step()
 
 
 if __name__ == "__main__":
